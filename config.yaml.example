@@ -1,0 +1,13 @@
+browser_executable_path: null
+# browser_executable_path: "C:\Program Files\BraveSoftware\Brave-Browser-Beta\Application\brave.exe"
+browser_user_data_dir: null
+# browser_user_data_dir: "C:\Users\yaz\AppData\Local\BraveSoftware\Brave-Browser-Beta\User Data"
+browser_profile: null
+# browser_profile: "Default"
+
+headless: false
+incognito: true
+
+# timeouts (seconds)
+timeout_seconds: 600 # HTTP total timeout (chat + general HTTP)
+upload_timeout_seconds: 600
