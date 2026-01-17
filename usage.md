@@ -1,4 +1,4 @@
-# lmarena-client — Usage Report
+# lmarena-client — Usage
 
 `lmarena-client` is a standalone Python 3.11+ package that:
 - boots a real Chromium-based browser via **nodriver** to pass anti-bot + generate reCAPTCHA tokens,
@@ -9,7 +9,7 @@
      - `GET /v1/models`
      - `POST /v1/chat/completions` (supports streaming)
 
-Key limitation (by design, matching LMArena behavior):
+Key limitation:
 - We **ignore multi-turn roles/history** from the request and only send **the last user message** (LMArena keeps history server-side per `evaluationSessionId`).
 
 ---
@@ -254,4 +254,3 @@ print(r.text)
 - **Reliability**: headful mode is default because Turnstile/reCAPTCHA is often more reliable than headless. You can enable headless via `LM_ARENA_BROWSER_HEADLESS=1`.
 - **Persistence**: the library does not store chats. If you want persistence, store the returned `evaluationSessionId` yourself and resume later.
 
-If you want, I can add a short “Troubleshooting” section (common bootstrap failures, missing cookies, nodriver setup issues) tailored to your environment.
