@@ -32,9 +32,8 @@ class ChatCompletionsRequest(BaseModel):
     messages: list[Message]
     stream: bool = False
 
-    # vendor extensions
+    # vendor extension (stateless resume)
     conversation: Optional[ConversationRef] = None
-    conversation_id: Optional[str] = None
 
 
 # -----------------------------
@@ -72,7 +71,6 @@ class ChatCompletionsResponse(BaseModel):
 
     # vendor extensions
     conversation: dict[str, Any] = Field(default_factory=dict)
-    conversation_id: Optional[str] = None
     images: Optional[list[str]] = None
     usage: Optional[dict[str, Any]] = None
 
@@ -101,6 +99,6 @@ class ChatCompletionsStreamChunk(BaseModel):
 
     # vendor extensions (only used in final chunk)
     conversation: Optional[dict[str, Any]] = None
-    conversation_id: Optional[str] = None
     images: Optional[list[str]] = None
     usage: Optional[dict[str, Any]] = None
+

@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import time
 import uuid
-from typing import Any, AsyncIterator, Optional, Tuple
+from typing import Any, AsyncIterator, Optional
 
 from .client import Client
 from .config import ClientConfig
@@ -12,7 +12,7 @@ from .stream import StreamFinal, StreamImages, Usage
 from .utils import log
 
 try:
-    from fastapi import FastAPI, HTTPException, Request
+    from fastapi import FastAPI, HTTPException
     from fastapi.responses import JSONResponse, StreamingResponse
 except ImportError as e:  # pragma: no cover
     raise MissingRequirementsError('Install server extras: pip install "lmarena-client[server]"') from e
@@ -88,17 +88,13 @@ def create_app(config: Optional[ClientConfig] = None) -> FastAPI:
     - POST /v1/chat/completions
 
     Notes:
-    - conversation continuation via vendor extension:
+    - conversation continuation via vendor extension (stateless):
         request.conversation = {"evaluationSessionId": "..."}
-      or:
-        request.conversation_id = "..."  (server-side map convenience)
+    - if no evaluationSessionId is provided, a new conversation is created.
     - ignores non-user roles; only uses last user message content + images.
     """
     app = FastAPI(title="lmarena-client", version="0.1.0")
     cfg = config or ClientConfig.from_env()
-
-    # server-side convenience map: conversation_id -> evaluationSessionId
-    app.state.conversation_map: dict[str, str] = {}
 
     @app.on_event("startup")
     async def _startup() -> None:
@@ -119,26 +115,19 @@ def create_app(config: Optional[ClientConfig] = None) -> FastAPI:
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 
-        payload = ListModelsResponse(
-            data=[ModelCard(id=m) for m in models]
-        )
+        payload = ListModelsResponse(data=[ModelCard(id=m) for m in models])
         return JSONResponse(payload.model_dump())
 
     @app.post("/v1/chat/completions")
     async def chat_completions(req: ChatCompletionsRequest) -> Any:
         client: Client = app.state.client
 
-        # Determine evaluationSessionId:
+        # Determine evaluationSessionId (stateless)
         eval_id: Optional[str] = None
         if req.conversation and req.conversation.evaluationSessionId:
             eval_id = req.conversation.evaluationSessionId
-        elif req.conversation_id:
-            eval_id = app.state.conversation_map.get(req.conversation_id)
 
         prompt, images = _extract_last_user_text_and_images([m.model_dump() for m in req.messages])
-
-        # If this is a new conversation and caller did not supply ids, create a server conversation_id.
-        conversation_id = req.conversation_id or str(uuid.uuid4())
 
         if not req.stream:
             try:
@@ -152,9 +141,6 @@ def create_app(config: Optional[ClientConfig] = None) -> FastAPI:
             except Exception as e:
                 raise HTTPException(status_code=500, detail=str(e))
 
-            # update map
-            app.state.conversation_map[conversation_id] = result.evaluation_session_id
-
             payload = ChatCompletionsResponse(
                 id=f"chatcmpl-{uuid.uuid4().hex}",
                 created=int(time.time()),
@@ -167,7 +153,6 @@ def create_app(config: Optional[ClientConfig] = None) -> FastAPI:
                     )
                 ],
                 conversation={"evaluationSessionId": result.evaluation_session_id},
-                conversation_id=conversation_id,
                 images=result.images,
                 usage=_usage_to_dict(result.usage),
             )
@@ -211,16 +196,12 @@ def create_app(config: Optional[ClientConfig] = None) -> FastAPI:
                         images_out.extend(event.urls)
 
                     elif isinstance(event, StreamFinal):
-                        # update map
-                        app.state.conversation_map[conversation_id] = event.evaluation_session_id
-
                         final_chunk = ChatCompletionsStreamChunk(
                             id=chunk_id,
                             created=created,
                             model=model,
                             choices=[StreamChoice(index=0, delta=Delta(), finish_reason=event.finish_reason)],
                             conversation={"evaluationSessionId": event.evaluation_session_id},
-                            conversation_id=conversation_id,
                             images=images_out or None,
                             usage=_usage_to_dict(event.usage),
                         )
@@ -240,4 +221,5 @@ def create_app(config: Optional[ClientConfig] = None) -> FastAPI:
 
 # Convenience for: `uvicorn lmarena_client.server:app`
 app = create_app()
+
 

@@ -139,7 +139,8 @@ class LMArenaCore:
 
                             if line.startswith("a0:"):
                                 chunk = json.loads(line[3:])
-                                if chunk ==                                     raise StreamError("LMArena stream returned                                 emitted_anything = True
+                                if chunk == "hasArenaError":
+                                    raise ModelNotFoundError("LMArena stream encountered an error: hasArenaError")
                                 if isinstance(chunk, str) and chunk:
                                     yield chunk
 
