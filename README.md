@@ -1,6 +1,6 @@
 # lmarena-client
 
-Standalone Python package extracted from `g4f`'s LMArena provider.
+Standalone Python package extracted from `g4f`'s LMArena provider (with some modifications).
 
 Goals:
 - Async client library for `lmarena.ai`
