@@ -1,0 +1,36 @@
+Metadata-Version: 2.4
+Name: lmarena-client
+Version: 0.1.0
+Summary: Minimal client + OpenAI-ish FastAPI server for lmarena.ai (nodriver + aiohttp)
+Author: lmarena-client contributors
+License: MIT
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+Requires-Dist: aiohttp>=3.9
+Requires-Dist: nodriver>=0.36
+Provides-Extra: server
+Requires-Dist: fastapi>=0.110; extra == "server"
+Requires-Dist: uvicorn[standard]>=0.24; extra == "server"
+Requires-Dist: pydantic>=2.0; extra == "server"
+Provides-Extra: dev
+Requires-Dist: ruff>=0.4; extra == "dev"
+Requires-Dist: pytest>=7.0; extra == "dev"
+Requires-Dist: pytest-asyncio>=0.23; extra == "dev"
+
+# lmarena-client
+
+Standalone Python package extracted from `g4f`'s LMArena provider.
+
+Goals:
+- Async client library for `lmarena.ai`
+- Optional FastAPI server with OpenAI-ish endpoints:
+  - `GET /v1/models`
+  - `POST /v1/chat/completions`
+- Uses **nodriver** for auth + reCAPTCHA
+- Uses **aiohttp** for HTTP (no curl_cffi)
+
+## Install
+
+Library only:
+```bash
+pip install -e .

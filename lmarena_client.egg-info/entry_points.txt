@@ -1,0 +1,2 @@
+[console_scripts]
+lmarena-server = lmarena_client.__main__:main

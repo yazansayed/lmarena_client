@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lmarena-client"
+version = "0.1.0"
+description = "Minimal client + OpenAI-ish FastAPI server for lmarena.ai (nodriver + aiohttp)"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+authors = [{name = "lmarena-client contributors"}]
+dependencies = [
+  "aiohttp>=3.9",
+  "nodriver>=0.36",
+]
+
+[project.optional-dependencies]
+server = [
+  "fastapi>=0.110",
+  "uvicorn[standard]>=0.24",
+  "pydantic>=2.0",
+]
+dev = [
+  "ruff>=0.4",
+  "pytest>=7.0",
+  "pytest-asyncio>=0.23",
+]
+
+[project.scripts]
+lmarena-server = "lmarena_client.__main__:main"
+
+
+[tool.setuptools]
+package-dir = {"" = "."}
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["lmarena_client*"]
