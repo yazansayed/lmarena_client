@@ -94,8 +94,8 @@ curl http://127.0.0.1:1337/v1/models
 ### 4.2 `POST /v1/chat/completions` (non-stream)
 Minimal request:
 ```bash
-curl -X POST http://127.0.0.1:1337/v1/chat/completions ^
-  -H "Content-Type: application/json" ^
+curl -X POST http://127.0.0.1:1337/v1/chat/completions \
+  -H "Content-Type: application/json" \
   -d "{\"model\":\"gemini-3-pro\",\"messages\":[{\"role\":\"user\",\"content\":\"hello\"}]}"
 ```
 
@@ -105,9 +105,9 @@ Response includes a vendor extension:
 Example response:
 ``` json
 {
-    "id": "chatcmpl-6ef5ec3a0ee24f3492c42bd51e5ee100",
+    "id": "chatcmpl-f0ea528f7853432d80e2ff2c9b718b9d",
     "object": "chat.completion",
-    "created": 1768643732,
+    "created": 1768644722,
     "model": "gemini-3-pro",
     "choices": [
         {
@@ -120,9 +120,8 @@ Example response:
         }
     ],
     "conversation": {
-        "evaluationSessionId": "019bcb61-8cf4-7457-99b9-17de827bbd63"
-    },
-    "conversation_id": "cbd2e590-d5fb-46f1-aaac-52c93fff603e"
+        "evaluationSessionId": "019bcb70-a714-7d9b-bb79-e2ae55270f67"
+    }
 }
 ```
 
@@ -135,31 +134,18 @@ To continue a chat, pass:
 
 Example:
 ```bash
-curl -X POST http://127.0.0.1:1337/v1/chat/completions ^
-  -H "Content-Type: application/json" ^
+curl -X POST http://127.0.0.1:1337/v1/chat/completions \
+  -H "Content-Type: application/json" \
   -d "{\"model\":\"gemini-3-pro\",\"conversation\":{\"evaluationSessionId\":\"<ID>\"},\"messages\":[{\"role\":\"user\",\"content\":\"continue\"}]}"
 ```
 
-### 4.4 Server-side convenience: `conversation_id`
-The server also maintains an **in-memory** mapping:
-- `conversation_id -> evaluationSessionId`
-
-So you can pass `conversation_id` instead of `conversation`:
-```json
-"conversation_id": "..."
-```
-
-Note:
-- This mapping is **not persisted** and will reset on server restart.
-
-
-### 4.5 Streaming (`stream: true`)
+### 4.4 Streaming (`stream: true`)
 This endpoint returns `text/event-stream` with OpenAI-style `data: ...` chunks and a final `data: [DONE]`.
 
 Example:
 ```bash
-curl -N -X POST http://127.0.0.1:1337/v1/chat/completions ^
-  -H "Content-Type: application/json" ^
+curl -N -X POST http://127.0.0.1:1337/v1/chat/completions \
+  -H "Content-Type: application/json" \
   -d "{\"model\":\"gemini-3-pro\",\"stream\":true,\"messages\":[{\"role\":\"user\",\"content\":\"hello\"}]}"
 ```
 
@@ -202,16 +188,16 @@ async def main():
     models = await client.list_models()
     print("Models:", models)
 
-    chat = await client.chats.create(model=models[0])
+    chat = await client.chats.create(model='gemini-3-pro')
 
     # non-stream
-    r1 = await chat.send("hello", stream=False)
+    r1 = await chat.send("1+1=", stream=False)
     print("Reply:", r1.text)
     print("Chat ID (evaluationSessionId):", r1.evaluation_session_id)
 
     # resume (explicitly)
-    chat2 = await client.chats.resume(model=models[0], chat_id=r1.evaluation_session_id)
-    r2 = await chat2.send("continue please", stream=False)
+    chat2 = await client.chats.resume(model='gemini-3-pro', chat_id=r1.evaluation_session_id)
+    r2 = await chat2.send("add 5 to the result", stream=False)
     print("Reply2:", r2.text)
 
 asyncio.run(main())
@@ -219,15 +205,22 @@ asyncio.run(main())
 
 ### Streaming usage
 ```python
+import asyncio
+from lmarena_client import Client
+
 async def stream_example():
     client = Client()
     await client.bootstrap()
     models = await client.list_models()
-    chat = await client.chats.create(model=models[0])
+    chat = await client.chats.create(model='gemini-3-pro')
 
-    stream = await chat.send("hello", stream=True)
+    stream = await chat.send("write a short article about global warming", stream=True)
     async for delta in stream:
-        print(delta, end="", flush=True)
+        print(delta, end="", flush=True) #not delta.content, delta is str
+
+    # We can get the id after stream completes, this is the id to persist/use for resume
+    print("\nChat eval id (post):", chat.conversation.evaluation_session_id)
+asyncio.run(stream_example())
 ```
 
 ### Sending images from Python

@@ -61,8 +61,9 @@ class ImageUploader:
                     async with StreamSession(
                         headers=http_args.headers,
                         cookies=http_args.cookies,
-                        timeout=self._config.timeout_seconds,
+                        timeout=self._config.upload_timeout_seconds,
                     ) as session:
+
                         # Step 1: generate upload URL
                         async with session.post(
                             image_url,
