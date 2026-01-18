@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useChatStore } from "../store/chats";
 import { useSettingsStore } from "../store/settings";
 import type {
@@ -12,6 +12,7 @@ import { MarkdownMessage } from "./MarkdownMessage";
 import { cn } from "../lib/cn";
 import {
   Check,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Copy,
@@ -68,9 +69,13 @@ export const ChatView: React.FC<ChatViewProps> = ({
   const { settings } = useSettingsStore();
 
   const formRef = useRef<HTMLFormElement | null>(null);
+  const modelMenuRef = useRef<HTMLDivElement | null>(null);
+  const modelFilterInputRef = useRef<HTMLInputElement | null>(null);
 
   const [input, setInput] = useState("");
   const [pendingImages, setPendingImages] = useState<PendingImage[]>([]);
+  const [modelFilter, setModelFilter] = useState("");
+  const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const [sending, setSending] = useState(false);
   const [streamingText, setStreamingText] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
@@ -85,15 +90,51 @@ export const ChatView: React.FC<ChatViewProps> = ({
 
   const messages = getMessagesForChat(activeChatId);
 
+  useEffect(() => {
+    setModelMenuOpen(false);
+    setModelFilter("");
+  }, [activeChatId]);
+
+  const filteredModels = useMemo(() => {
+    const q = modelFilter.trim().toLowerCase();
+    if (!q) return models;
+    return models.filter((m) => m.toLowerCase().includes(q));
+  }, [models, modelFilter]);
+
   const selectedModel: string | null = useMemo(() => {
     if (activeChat?.model) return activeChat.model;
     if (models.length > 0) return models[0];
     return null;
   }, [activeChat?.model, models]);
 
-  function handleModelChange(e: React.ChangeEvent<HTMLSelectElement>) {
+  useEffect(() => {
+    if (!modelMenuOpen) return;
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setModelMenuOpen(false);
+    };
+
+    const onMouseDown = (e: MouseEvent) => {
+      const el = modelMenuRef.current;
+      if (!el) return;
+      if (!el.contains(e.target as Node)) setModelMenuOpen(false);
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("mousedown", onMouseDown);
+    window.setTimeout(() => modelFilterInputRef.current?.focus(), 0);
+
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("mousedown", onMouseDown);
+    };
+  }, [modelMenuOpen]);
+
+  async function handleSelectModel(modelId: string) {
     if (!activeChat) return;
-    updateChat(activeChat.id, { model: e.target.value });
+    await updateChat(activeChat.id, { model: modelId });
+    setModelMenuOpen(false);
+    setModelFilter("");
   }
 
   async function handleFileInput(e: React.ChangeEvent<HTMLInputElement>) {
@@ -353,25 +394,98 @@ export const ChatView: React.FC<ChatViewProps> = ({
           </button>
 
           <div className="text-xs text-slate-400">Model</div>
-          <select
-            className="rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-xs text-slate-100"
-            value={selectedModel ?? ""}
-            onChange={handleModelChange}
-            disabled={!activeChat || models.length === 0}
-          >
-            {modelsLoading && <option value="">Loading models...</option>}
-            {!modelsLoading && models.length === 0 && (
-              <option value="">No models</option>
+          <div className="relative" ref={modelMenuRef}>
+            <button
+              type="button"
+              disabled={!activeChat || (models.length === 0 && !modelsLoading)}
+              onClick={() => {
+                if (modelMenuOpen) {
+                  setModelMenuOpen(false);
+                  setModelFilter("");
+                  return;
+                }
+                setModelFilter("");
+                setModelMenuOpen(true);
+              }}
+              className={cn(
+                "inline-flex h-7 items-center justify-between gap-2 rounded-md border px-2 py-1 text-xs",
+                !activeChat || (models.length === 0 && !modelsLoading)
+                  ? "border-slate-800 bg-slate-900 text-slate-500"
+                  : "border-slate-700 bg-slate-900 text-slate-100 hover:bg-slate-800"
+              )}
+              title="Select model"
+            >
+              <span className="max-w-[260px] truncate">
+                {modelsLoading && models.length === 0
+                  ? "Loading models..."
+                  : selectedModel ?? "Select model"}
+              </span>
+              <ChevronDown className="h-4 w-4 opacity-70" />
+            </button>
+
+            {modelMenuOpen && (
+              <div className="absolute left-0 top-full mt-1 w-80 rounded-md border border-slate-800 bg-slate-950 shadow-xl z-50">
+                <div className="border-b border-slate-800 p-2">
+                  <input
+                    ref={modelFilterInputRef}
+                    type="text"
+                    value={modelFilter}
+                    onChange={(e) => setModelFilter(e.target.value)}
+                    placeholder="Type to filter..."
+                    className="w-full rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-400"
+                  />
+                </div>
+
+                <div className="max-h-72 overflow-y-auto py-1">
+                  {modelsLoading && models.length === 0 && (
+                    <div className="px-2 py-2 text-xs text-slate-400">
+                      Loading models...
+                    </div>
+                  )}
+
+                  {!modelsLoading && models.length === 0 && (
+                    <div className="px-2 py-2 text-xs text-slate-400">
+                      No models
+                    </div>
+                  )}
+
+                  {!modelsLoading &&
+                    models.length > 0 &&
+                    filteredModels.length === 0 && (
+                      <div className="px-2 py-2 text-xs text-slate-400">
+                        No matches
+                      </div>
+                    )}
+
+                  {filteredModels.map((m) => {
+                    const isSelected = m === selectedModel;
+                    return (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => handleSelectModel(m)}
+                        className={cn(
+                          "w-full flex items-center justify-between gap-2 px-2 py-1.5 text-left text-xs",
+                          isSelected
+                            ? "bg-slate-800 text-slate-50"
+                            : "text-slate-200 hover:bg-slate-900"
+                        )}
+                      >
+                        <span className="truncate">{m}</span>
+                        {isSelected && <Check className="h-3 w-3" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
             )}
-            {models.map((m) => (
-              <option key={m} value={m}>
-                {m}
-              </option>
-            ))}
-          </select>
+          </div>
+
           {modelsError && (
             <span className="text-[10px] text-red-400">{modelsError}</span>
           )}
+
+
         </div>
 
         <div className="flex items-center gap-2">
