@@ -102,9 +102,17 @@ def _parse_simple_yaml(path: Path) -> dict[str, Any]:
 def _find_config_file() -> Optional[Path]:
     """
     Find config file using standard precedence for file location:
-    1) LM_ARENA_CONFIG (explicit path)
-    2) ./config.yaml (current working directory)
+    1) <project_root>/config.yaml (parent of lmarena_client package)
+    2) LM_ARENA_CONFIG (explicit path via env var)
+    3) ./config.yaml (current working directory)
     """
+    # Project root: parent of the lmarena_client package directory
+    package_dir = Path(__file__).resolve().parent  # lmarena_client/
+    project_root = package_dir.parent  # parent of lmarena_client/
+    project_config = project_root / "config.yaml"
+    if project_config.is_file():
+        return project_config
+
     env_path = os.environ.get("LM_ARENA_CONFIG")
     if env_path:
         p = Path(env_path).expanduser()
