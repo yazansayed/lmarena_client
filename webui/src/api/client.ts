@@ -71,6 +71,12 @@ export async function sendChatCompletion(
 
   const data = await res.json();
 
+  // Check for error response
+  if (data?.error) {
+    const errMsg = data.error.message || data.error.type || "Unknown error from server";
+    throw new Error(errMsg);
+  }
+
   const choice = Array.isArray(data?.choices) ? data.choices[0] : null;
   const content =
     choice && choice.message && typeof choice.message.content === "string"
@@ -161,7 +167,14 @@ export async function sendChatCompletionStream(
           continue;
         }
 
+        // Check for error in streamed chunk
+        if (parsed?.error) {
+          const errMsg = parsed.error.message || parsed.error.type || "Unknown error from server";
+          throw new Error(errMsg);
+        }
+
         const choice =
+
           Array.isArray(parsed?.choices) && parsed.choices.length > 0
             ? parsed.choices[0]
             : null;
