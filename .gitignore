@@ -229,3 +229,4 @@ files.txt
 __pycache__/
 *.pyc
 lmarena_client/__pycache__/
+webui_dist/

@@ -29,6 +29,14 @@ function splitContent(content: MessageContent): { text: string; images: string[]
   return { text: texts.join("\n\n"), images };
 }
 
+function reactNodeToText(node: React.ReactNode): string {
+  if (node === null || node === undefined || typeof node === "boolean") return "";
+  if (typeof node === "string" || typeof node === "number") return String(node);
+  if (Array.isArray(node)) return node.map(reactNodeToText).join("");
+  if (React.isValidElement(node)) return reactNodeToText((node.props as any)?.children);
+  return "";
+}
+
 export interface MarkdownMessageProps {
   content: MessageContent;
   className?: string;
@@ -50,8 +58,9 @@ export const MarkdownMessage: React.FC<MarkdownMessageProps> = ({
           rehypePlugins={[rehypeHighlight as any]}
           components={{
             code({ inline, className, children, ...props }) {
-              const value = String(children ?? "");
+              const value = reactNodeToText(children).replace(/\n$/, "");
               const isCopied = copiedCodeValue === value;
+
 
               if (inline) {
                 return (
