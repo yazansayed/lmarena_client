@@ -268,3 +268,70 @@ print(r.text)
 - **Reliability**: headful mode is default because Turnstile/reCAPTCHA is often more reliable than headless. You can enable headless via `LM_ARENA_BROWSER_HEADLESS=1`.
 - **Persistence**: the library does not store chats. If you want persistence, store the returned `evaluationSessionId` yourself and resume later.
 
+---
+
+## 8) WebUI (optional React frontend)
+
+An optional WebUI is included, built with Vite + React + TypeScript and served by the same FastAPI server under:
+
+- `GET /ui` (SPA entry)
+- `GET /ui/assets/*` (static assets)
+
+The WebUI is a single-page chat application that:
+
+- Lists models from `GET /v1/models`
+- Supports multiple conversations with per-chat model selection
+- Streams responses (OpenAI-style SSE) or non-streaming responses
+- Persists chats locally (IndexedDB) with a configurable max chat count (default 50)
+- Handles conversation continuation via `conversation.evaluationSessionId`
+- Supports image upload in the last user message (OpenAI-style `image_url` parts)
+- Renders markdown with syntax-highlighted code fences and “copy code” buttons
+- Allows copying raw message text and the `evaluationSessionId` for a chat
+- Provides a Settings drawer (theme, streaming on/off, max chats, export/import)
+
+### 8.1 WebUI source
+
+Frontend source lives in:
+
+- `webui/` (Vite project: React + TS + Tailwind)
+
+Build output is written into the Python package:
+
+- `lmarena_client/webui_dist/`
+
+These built assets are included as package data and served by FastAPI.
+
+### 8.2 Building the WebUI (for updating packaged assets)
+
+From the project root:
+
+```bash
+cd webui
+npm install  # or pnpm install / yarn install
+npm run build
+```
+
+This writes the production build into `lmarena_client/webui_dist/`.
+
+After that, running the server as usual:
+
+```bash
+lmarena-server
+```
+
+will serve the WebUI at:
+
+- `http://127.0.0.1:1337/ui`
+
+### 8.3 WebUI development (Vite dev server)
+
+For frontend development with hot reload, run:
+
+```bash
+cd webui
+npm install  # first time only
+npm run dev
+```
+
+This starts Vite on `http://127.0.0.1:5173` and proxies API calls to the Python server at `http://127.0.0.1:1337` for `/v1/*` endpoints.
+

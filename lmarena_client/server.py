@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import time
 import uuid
+from pathlib import Path
 from typing import Any, AsyncIterator, Optional
 
 from .client import Client
@@ -13,7 +14,8 @@ from .utils import log
 
 try:
     from fastapi import FastAPI, HTTPException
-    from fastapi.responses import JSONResponse, StreamingResponse
+    from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
+    from fastapi.staticfiles import StaticFiles
 except ImportError as e:  # pragma: no cover
     raise MissingRequirementsError('Install server extras: pip install "lmarena-client[server]"') from e
 
@@ -95,6 +97,40 @@ def create_app(config: Optional[ClientConfig] = None) -> FastAPI:
     """
     app = FastAPI(title="lmarena-client", version="0.1.0")
     cfg = config or ClientConfig.from_env()
+
+    # Static WebUI (built frontend) served from /ui
+    static_dir = Path(__file__).resolve().parent / "webui_dist"
+
+    if static_dir.exists():
+        # Serve built assets (Vite-style) under /ui/assets
+        app.mount(
+            "/ui/assets",
+            StaticFiles(directory=static_dir / "assets", check_dir=False),
+            name="ui_assets",
+        )
+
+        # SPA entry + fallback for any /ui/* path
+        @app.get("/ui", response_class=HTMLResponse)
+        @app.get("/ui/{path:path}", response_class=HTMLResponse)
+        async def serve_ui(path: str = "") -> HTMLResponse:  # type: ignore[unused-argument]
+            index_file = static_dir / "index.html"
+            if not index_file.is_file():
+                return HTMLResponse(
+                    "<h1>WebUI assets not found</h1><p>Expected index.html under webui_dist.</p>",
+                    status_code=500,
+                )
+            return HTMLResponse(index_file.read_text(encoding="utf-8"))
+    else:
+        # Graceful message when assets are missing
+        @app.get("/ui", response_class=HTMLResponse)
+        async def ui_missing() -> HTMLResponse:
+            return HTMLResponse(
+                "<h1>WebUI assets not found</h1>"
+                "<p>No webui_dist directory detected. "
+                "Run the frontend build to generate the WebUI assets.</p>",
+                status_code=500,
+            )
+
 
     @app.on_event("startup")
     async def _startup() -> None:

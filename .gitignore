@@ -211,3 +211,17 @@ __marimo__/
 states/
 gemini_logs/
 config.yaml
+
+# Node / frontend (webui)
+webui/node_modules/
+webui/.vite/
+webui/.cache/
+webui/.turbo/
+webui/.parcel-cache/
+webui/.eslintcache
+
+# Vite local build output (if you ever change outDir back to ./dist)
+webui/dist/
+
+
+webui/lmarena_nodriver_guest/

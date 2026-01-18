@@ -33,7 +33,13 @@ lmarena-server = "lmarena_client.__main__:main"
 
 [tool.setuptools]
 package-dir = {"" = "."}
+include-package-data = true
+
 
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["lmarena_client*"]
+
+[tool.setuptools.package-data]
+"lmarena_client" = ["webui_dist/**"]
+
