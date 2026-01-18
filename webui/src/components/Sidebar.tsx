@@ -9,7 +9,7 @@ interface SidebarProps {
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({ onOpenSettings }) => {
-  const { chats, activeChatId, setActiveChat, createChat, deleteChat, clearAll } =
+  const { chats, activeChatId, setActiveChat, createChat, deleteChat } =
     useChatStore();
   const { settings } = useSettingsStore();
 
@@ -17,11 +17,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ onOpenSettings }) => {
     const defaultModel = chats.length > 0 ? chats[chats.length - 1].model : null;
     const chat = await createChat({ model: defaultModel });
     setActiveChat(chat.id);
-  }
-
-  async function handleClearAll() {
-    if (!window.confirm("Clear all chats? This cannot be undone.")) return;
-    await clearAll();
   }
 
   return (
@@ -49,14 +44,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ onOpenSettings }) => {
         >
           <Plus className="h-4 w-4" />
           New chat
-        </button>
-        <button
-          type="button"
-          onClick={handleClearAll}
-          className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-700 bg-slate-900 text-slate-400 hover:bg-slate-800"
-          title="Clear all chats"
-        >
-          <Trash2 className="h-4 w-4" />
         </button>
       </div>
 
@@ -112,3 +99,4 @@ export const Sidebar: React.FC<SidebarProps> = ({ onOpenSettings }) => {
     </aside>
   );
 };
+

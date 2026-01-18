@@ -13,6 +13,7 @@ const App: React.FC = () => {
   const [modelsLoading, setModelsLoading] = useState<boolean>(false);
   const [modelsError, setModelsError] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
 
   useEffect(() => {
     // Load settings and chats on startup
@@ -58,13 +59,20 @@ const App: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-background text-foreground flex">
-      <Sidebar onOpenSettings={() => setSettingsOpen(true)} />
-      <main className="flex-1 flex flex-col border-l border-slate-800 bg-slate-950/80">
+    <div className="h-screen overflow-hidden bg-background text-foreground flex">
+      {sidebarOpen && <Sidebar onOpenSettings={() => setSettingsOpen(true)} />}
+      <main
+        className={[
+          "flex-1 flex flex-col bg-slate-950/80 overflow-hidden",
+          sidebarOpen ? "border-l border-slate-800" : "",
+        ].join(" ")}
+      >
         <ChatView
           models={models}
           modelsLoading={modelsLoading}
           modelsError={modelsError}
+          sidebarOpen={sidebarOpen}
+          onToggleSidebar={() => setSidebarOpen((v) => !v)}
         />
       </main>
       <SettingsDrawer open={settingsOpen} onClose={() => setSettingsOpen(false)} />
@@ -73,4 +81,5 @@ const App: React.FC = () => {
 };
 
 export default App;
+
 

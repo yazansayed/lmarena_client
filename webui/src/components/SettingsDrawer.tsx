@@ -2,9 +2,9 @@ import React, { useState } from "react";
 import { useSettingsStore } from "../store/settings";
 import type { Theme } from "../types";
 import { cn } from "../lib/cn";
-import { Download, Upload, X } from "lucide-react";
+import { Download, Trash2, Upload, X } from "lucide-react";
 import { db } from "../db";
-import { reloadChatsFromDB } from "../store/chats";
+import { reloadChatsFromDB, useChatStore } from "../store/chats";
 
 interface SettingsDrawerProps {
   open: boolean;
@@ -46,9 +46,7 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
       setMaxChatsDraft(settings.maxChats);
       return;
     }
-    setMaxChats(n).catch((err) =>
-      console.error("Failed to set maxChats", err)
-    );
+    setMaxChats(n).catch((err) => console.error("Failed to set maxChats", err));
   }
 
   async function handleExport() {
@@ -79,17 +77,13 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
     }
   }
 
-  async function handleImportFile(
-    e: React.ChangeEvent<HTMLInputElement>
-  ) {
+  async function handleImportFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
 
     if (
-      !window.confirm(
-        "Importing will replace all existing local chats. Continue?"
-      )
+      !window.confirm("Importing will replace all existing local chats. Continue?")
     ) {
       return;
     }
@@ -118,9 +112,17 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
       onClose();
     } catch (err: any) {
       console.error("Failed to import chats", err);
-      setImportError(
-        err instanceof Error ? err.message : "Failed to import file"
-      );
+      setImportError(err instanceof Error ? err.message : "Failed to import file");
+    }
+  }
+
+  async function handleClearAllChats() {
+    if (!window.confirm("Clear all chats? This cannot be undone.")) return;
+    try {
+      await useChatStore.getState().clearAll();
+      onClose();
+    } catch (err) {
+      console.error("Failed to clear all chats", err);
     }
   }
 
@@ -130,9 +132,7 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
         <div className="flex items-center justify-between border-b border-slate-800 px-4 py-3">
           <div>
             <div className="text-sm font-semibold">Settings</div>
-            <div className="text-xs text-slate-400">
-              lmarena-client WebUI
-            </div>
+            <div className="text-xs text-slate-400">lmarena-client WebUI</div>
           </div>
           <button
             type="button"
@@ -145,9 +145,7 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
 
         <div className="space-y-5 px-4 py-4 text-sm">
           <div>
-            <div className="mb-1 text-xs font-semibold text-slate-300">
-              Theme
-            </div>
+            <div className="mb-1 text-xs font-semibold text-slate-300">Theme</div>
             <select
               value={settings.theme}
               onChange={handleThemeChange}
@@ -231,10 +229,26 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
               Import will replace all existing local chats and messages.
             </div>
             {importError && (
-              <div className="mt-1 text-[11px] text-red-400">
-                {importError}
-              </div>
+              <div className="mt-1 text-[11px] text-red-400">{importError}</div>
             )}
+          </div>
+
+          <div>
+            <div className="mb-1 text-xs font-semibold text-slate-300">
+              Danger zone
+            </div>
+            <button
+              type="button"
+              onClick={handleClearAllChats}
+              className="inline-flex w-full items-center justify-center gap-2 rounded-md border border-red-900/70 bg-red-950/40 px-2 py-1.5 text-xs text-red-200 hover:bg-red-950/60"
+              title="Clear all locally stored chats and messages"
+            >
+              <Trash2 className="h-3 w-3" />
+              Clear all chats
+            </button>
+            <div className="mt-1 text-[11px] text-slate-500">
+              Removes all locally stored chats and messages. This cannot be undone.
+            </div>
           </div>
 
           <div className="mt-4 text-[11px] text-slate-500">
@@ -249,4 +263,5 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
     </div>
   );
 };
+
 

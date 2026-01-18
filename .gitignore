@@ -228,3 +228,4 @@ webui/lmarena_nodriver_guest/
 files.txt
 __pycache__/
 *.pyc
+lmarena_client/__pycache__/

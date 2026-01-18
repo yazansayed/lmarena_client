@@ -1,15 +1,17 @@
-import React from "react";
+import React, { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import "highlight.js/styles/github-dark.css";
-import type { MessageContent, MessagePartImageUrl, MessagePartText } from "../types";
+import type {
+  MessageContent,
+  MessagePartImageUrl,
+  MessagePartText,
+} from "../types";
 import { cn } from "../lib/cn";
-import { Copy } from "lucide-react";
+import { Check, Copy } from "lucide-react";
 
-function splitContent(
-  content: MessageContent
-): { text: string; images: string[] } {
+function splitContent(content: MessageContent): { text: string; images: string[] } {
   if (typeof content === "string") {
     return { text: content, images: [] };
   }
@@ -37,6 +39,7 @@ export const MarkdownMessage: React.FC<MarkdownMessageProps> = ({
   className,
 }) => {
   const { text, images } = splitContent(content);
+  const [copiedCodeValue, setCopiedCodeValue] = useState<string | null>(null);
 
   return (
     <div className={cn("space-y-3", className)}>
@@ -46,11 +49,9 @@ export const MarkdownMessage: React.FC<MarkdownMessageProps> = ({
           remarkPlugins={[remarkGfm]}
           rehypePlugins={[rehypeHighlight as any]}
           components={{
-            code({ node, inline, className, children, ...props }) {
-              const match = /language-(\w+)/.exec(className || "");
-              const language = match?.[1];
-
+            code({ inline, className, children, ...props }) {
               const value = String(children ?? "");
+              const isCopied = copiedCodeValue === value;
 
               if (inline) {
                 return (
@@ -69,6 +70,10 @@ export const MarkdownMessage: React.FC<MarkdownMessageProps> = ({
               async function handleCopy() {
                 try {
                   await navigator.clipboard.writeText(value);
+                  setCopiedCodeValue(value);
+                  window.setTimeout(() => {
+                    setCopiedCodeValue((cur) => (cur === value ? null : cur));
+                  }, 900);
                 } catch (e) {
                   console.error("Failed to copy code", e);
                 }
@@ -89,15 +94,11 @@ export const MarkdownMessage: React.FC<MarkdownMessageProps> = ({
                     type="button"
                     onClick={handleCopy}
                     className="absolute right-2 top-2 inline-flex items-center gap-1 rounded-md bg-slate-900/90 px-2 py-1 text-[10px] text-slate-300 opacity-0 shadow-sm ring-1 ring-slate-700 transition-opacity group-hover:opacity-100"
+                    title={isCopied ? "Copied" : "Copy"}
                   >
-                    <Copy className="h-3 w-3" />
-                    Copy
+                    {isCopied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                    {isCopied ? "Copied" : "Copy"}
                   </button>
-                  {language && (
-                    <div className="absolute left-2 top-2 rounded-md bg-slate-900/80 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-slate-400">
-                      {language}
-                    </div>
-                  )}
                 </div>
               );
             },
@@ -123,11 +124,7 @@ export const MarkdownMessage: React.FC<MarkdownMessageProps> = ({
                 }
               }}
             >
-              <img
-                src={url}
-                alt="attachment"
-                className="h-24 w-24 object-cover"
-              />
+              <img src={url} alt="attachment" className="h-24 w-24 object-cover" />
             </button>
           ))}
         </div>
@@ -135,3 +132,4 @@ export const MarkdownMessage: React.FC<MarkdownMessageProps> = ({
     </div>
   );
 };
+

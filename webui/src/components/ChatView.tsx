@@ -1,17 +1,32 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import { useChatStore } from "../store/chats";
 import { useSettingsStore } from "../store/settings";
-import type { Message, MessageContent, MessagePartImageUrl, MessagePartText } from "../types";
+import type {
+  Message,
+  MessageContent,
+  MessagePartImageUrl,
+  MessagePartText,
+} from "../types";
 import { sendChatCompletion, sendChatCompletionStream } from "../api/client";
 import { MarkdownMessage } from "./MarkdownMessage";
 import { cn } from "../lib/cn";
-import { Copy, Image as ImageIcon, Loader2 } from "lucide-react";
+import {
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  Copy,
+  Download,
+  Image as ImageIcon,
+  Loader2,
+} from "lucide-react";
 import { newId } from "../lib/id";
 
 interface ChatViewProps {
   models: string[];
   modelsLoading: boolean;
   modelsError: string | null;
+  sidebarOpen: boolean;
+  onToggleSidebar: () => void;
 }
 
 interface PendingImage {
@@ -30,10 +45,17 @@ function extractText(content: MessageContent): string {
   return parts.join("\n\n");
 }
 
+function sanitizeFilename(name: string): string {
+  // Windows + general forbidden chars: \ / : * ? " < > |
+  return name.replace(/[\\/:*?"<>|]/g, "_").trim();
+}
+
 export const ChatView: React.FC<ChatViewProps> = ({
   models,
   modelsLoading,
   modelsError,
+  sidebarOpen,
+  onToggleSidebar,
 }) => {
   const {
     chats,
@@ -45,11 +67,16 @@ export const ChatView: React.FC<ChatViewProps> = ({
   } = useChatStore();
   const { settings } = useSettingsStore();
 
+  const formRef = useRef<HTMLFormElement | null>(null);
+
   const [input, setInput] = useState("");
   const [pendingImages, setPendingImages] = useState<PendingImage[]>([]);
   const [sending, setSending] = useState(false);
   const [streamingText, setStreamingText] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
+
+  const [copiedEvalId, setCopiedEvalId] = useState(false);
+  const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
 
   const activeChat = useMemo(
     () => chats.find((c) => c.id === activeChatId) ?? null,
@@ -154,10 +181,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
           chat.evaluationSessionId
         );
 
-        const assistantContent = buildAssistantContent(
-          result.text,
-          result.images
-        );
+        const assistantContent = buildAssistantContent(result.text, result.images);
 
         await addMessage({
           chatId: chat.id,
@@ -165,7 +189,10 @@ export const ChatView: React.FC<ChatViewProps> = ({
           content: assistantContent,
         });
 
-        if (result.evaluationSessionId && result.evaluationSessionId !== chat.evaluationSessionId) {
+        if (
+          result.evaluationSessionId &&
+          result.evaluationSessionId !== chat.evaluationSessionId
+        ) {
           await updateChat(chat.id, {
             evaluationSessionId: result.evaluationSessionId,
           });
@@ -186,10 +213,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
 
         const result = await resultPromise;
 
-        const assistantContent = buildAssistantContent(
-          result.text,
-          result.images
-        );
+        const assistantContent = buildAssistantContent(result.text, result.images);
 
         await addMessage({
           chatId: chat.id,
@@ -197,7 +221,10 @@ export const ChatView: React.FC<ChatViewProps> = ({
           content: assistantContent,
         });
 
-        if (result.evaluationSessionId && result.evaluationSessionId !== chat.evaluationSessionId) {
+        if (
+          result.evaluationSessionId &&
+          result.evaluationSessionId !== chat.evaluationSessionId
+        ) {
           await updateChat(chat.id, {
             evaluationSessionId: result.evaluationSessionId,
           });
@@ -220,9 +247,41 @@ export const ChatView: React.FC<ChatViewProps> = ({
     if (!activeChat?.evaluationSessionId) return;
     try {
       await navigator.clipboard.writeText(activeChat.evaluationSessionId);
+      setCopiedEvalId(true);
+      window.setTimeout(() => setCopiedEvalId(false), 900);
     } catch (e) {
       console.error("Failed to copy evaluationSessionId", e);
     }
+  }
+
+  async function handleExportChat() {
+    if (!activeChatId) return;
+    const msgs = getMessagesForChat(activeChatId);
+    if (msgs.length === 0) return;
+
+    const lines: string[] = [];
+    for (let i = 0; i < msgs.length; i++) {
+      const m = msgs[i];
+      const role = m.role.toUpperCase();
+      const content = extractText(m.content).trimEnd();
+      lines.push(`###### MESSAGE ${i + 1}: ${role} ######`);
+      lines.push(content || "");
+    }
+
+    const out = lines.join("\n") + "\n";
+
+    const title = sanitizeFilename(activeChat?.title || "chat") || "chat";
+    const blob = new Blob([out], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${title}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+
+    URL.revokeObjectURL(url);
   }
 
   function renderMessage(msg: Message) {
@@ -232,10 +291,16 @@ export const ChatView: React.FC<ChatViewProps> = ({
     async function handleCopyRaw() {
       try {
         await navigator.clipboard.writeText(textOnly);
+        setCopiedMessageId(msg.id);
+        window.setTimeout(() => {
+          setCopiedMessageId((cur) => (cur === msg.id ? null : cur));
+        }, 900);
       } catch (e) {
         console.error("Failed to copy message", e);
       }
     }
+
+    const isCopied = copiedMessageId === msg.id;
 
     return (
       <div
@@ -258,9 +323,10 @@ export const ChatView: React.FC<ChatViewProps> = ({
               type="button"
               onClick={handleCopyRaw}
               className="inline-flex items-center gap-1 rounded-md bg-slate-900 px-1.5 py-0.5 text-[10px] text-slate-300 hover:bg-slate-800"
+              title={isCopied ? "Copied" : "Copy"}
             >
-              <Copy className="h-3 w-3" />
-              Copy
+              {isCopied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+              {isCopied ? "Copied" : "Copy"}
             </button>
           </div>
           <MarkdownMessage content={msg.content} />
@@ -270,9 +336,22 @@ export const ChatView: React.FC<ChatViewProps> = ({
   }
 
   return (
-    <div className="flex flex-1 flex-col">
+    <div className="flex flex-1 flex-col overflow-hidden">
       <header className="flex items-center justify-between border-b border-slate-800 px-4 py-2">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 min-w-0">
+          <button
+            type="button"
+            onClick={onToggleSidebar}
+            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800"
+            title={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
+          >
+            {sidebarOpen ? (
+              <ChevronLeft className="h-4 w-4" />
+            ) : (
+              <ChevronRight className="h-4 w-4" />
+            )}
+          </button>
+
           <div className="text-xs text-slate-400">Model</div>
           <select
             className="rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-xs text-slate-100"
@@ -294,15 +373,32 @@ export const ChatView: React.FC<ChatViewProps> = ({
             <span className="text-[10px] text-red-400">{modelsError}</span>
           )}
         </div>
+
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleExportChat}
+            disabled={!activeChatId || messages.length === 0}
+            className={cn(
+              "inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[10px]",
+              !activeChatId || messages.length === 0
+                ? "border-slate-800 bg-slate-900 text-slate-500"
+                : "border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800"
+            )}
+            title="Export current chat (.txt)"
+          >
+            <Download className="h-3 w-3" />
+            Export chat
+          </button>
+
           {activeChat?.evaluationSessionId && (
             <button
               type="button"
               onClick={handleCopyEvalId}
               className="inline-flex items-center gap-1 rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-[10px] text-slate-200 hover:bg-slate-800"
-              title="Copy evaluationSessionId"
+              title={copiedEvalId ? "Copied" : "Copy evaluationSessionId"}
             >
-              <Copy className="h-3 w-3" />
+              {copiedEvalId ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
               <span className="max-w-[200px] truncate">
                 {activeChat.evaluationSessionId}
               </span>
@@ -334,14 +430,11 @@ export const ChatView: React.FC<ChatViewProps> = ({
       </div>
 
       <form
+        ref={formRef}
         onSubmit={handleSubmit}
         className="border-t border-slate-800 px-4 py-3 space-y-2"
       >
-        {error && (
-          <div className="text-xs text-red-400 mb-1">
-            {error}
-          </div>
-        )}
+        {error && <div className="text-xs text-red-400 mb-1">{error}</div>}
 
         {pendingImages.length > 0 && (
           <div className="mb-1 flex flex-wrap gap-2">
@@ -393,13 +486,19 @@ export const ChatView: React.FC<ChatViewProps> = ({
             className="min-h-[52px] max-h-40 flex-1 resize-none rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-400"
             placeholder={
               selectedModel
-                ? "Send a message..."
+                ? "Send a message... (Ctrl+Enter to send)"
                 : modelsLoading
                 ? "Loading models..."
                 : "No models available"
             }
             value={input}
             onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && e.ctrlKey) {
+                e.preventDefault();
+                formRef.current?.requestSubmit();
+              }
+            }}
             disabled={sending || !selectedModel}
           />
           <button
@@ -411,16 +510,14 @@ export const ChatView: React.FC<ChatViewProps> = ({
             }
             className={cn(
               "inline-flex h-9 items-center justify-center rounded-lg px-4 text-sm font-medium",
-              sending || !selectedModel || (input.trim().length === 0 && pendingImages.length === 0)
+              sending ||
+                !selectedModel ||
+                (input.trim().length === 0 && pendingImages.length === 0)
                 ? "bg-slate-800 text-slate-500"
                 : "bg-slate-100 text-slate-900 hover:bg-slate-200"
             )}
           >
-            {sending ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              "Send"
-            )}
+            {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Send"}
           </button>
         </div>
       </form>
@@ -428,10 +525,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
   );
 };
 
-function buildContentWithImages(
-  text: string,
-  dataUrls: string[]
-): MessageContent {
+function buildContentWithImages(text: string, dataUrls: string[]): MessageContent {
   const parts: (MessagePartText | MessagePartImageUrl)[] = [];
   if (text.trim()) {
     parts.push({ type: "text", text });
@@ -442,10 +536,7 @@ function buildContentWithImages(
   return parts;
 }
 
-function buildAssistantContent(
-  text: string,
-  images: string[]
-): MessageContent {
+function buildAssistantContent(text: string, images: string[]): MessageContent {
   const parts: (MessagePartText | MessagePartImageUrl)[] = [];
   if (text) {
     parts.push({ type: "text", text });
@@ -477,3 +568,4 @@ function readFileAsDataUrl(file: File): Promise<string> {
     reader.readAsDataURL(file);
   });
 }
+
