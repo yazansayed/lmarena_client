@@ -8,7 +8,7 @@ from typing import Any, AsyncIterator, Optional
 
 from .client import Client
 from .config import ClientConfig
-from .errors import MissingRequirementsError
+from .errors import MissingRequirementsError, HTTPError
 from .stream import StreamFinal, StreamImages, Usage
 from .utils import log
 
@@ -148,6 +148,8 @@ def create_app(config: Optional[ClientConfig] = None) -> FastAPI:
         client: Client = app.state.client
         try:
             models = await client.list_models()
+        except HTTPError as e:
+            raise HTTPException(status_code=e.status or 500, detail=str(e))
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 
@@ -174,6 +176,8 @@ def create_app(config: Optional[ClientConfig] = None) -> FastAPI:
                     create_new=(eval_id is None),
                     media=images,
                 )
+            except HTTPError as e:
+                raise HTTPException(status_code=e.status or 500, detail=str(e))
             except Exception as e:
                 raise HTTPException(status_code=500, detail=str(e))
 
@@ -195,6 +199,26 @@ def create_app(config: Optional[ClientConfig] = None) -> FastAPI:
             return JSONResponse(payload.model_dump(exclude_none=True))
 
         # streaming
+        # Prefetch first upstream event so we can fail with a real HTTP status code
+        # (before sending any SSE bytes / headers).
+        try:
+            upstream = client._core.stream_message(
+                model=req.model,
+                prompt=prompt,
+                evaluation_session_id=eval_id,
+                create_new=(eval_id is None),
+                media=images,
+            )
+            first_event = await anext(upstream, None)
+            if first_event is None:
+                raise HTTPException(status_code=502, detail="Upstream stream ended unexpectedly")
+        except HTTPError as e:
+            raise HTTPException(status_code=e.status or 500, detail=str(e))
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
         async def sse() -> AsyncIterator[bytes]:
             chunk_id = f"chatcmpl-{uuid.uuid4().hex}"
             created = int(time.time())
@@ -211,37 +235,50 @@ def create_app(config: Optional[ClientConfig] = None) -> FastAPI:
 
             images_out: list[str] = []
 
+            async def handle_event(event: Any) -> AsyncIterator[bytes]:
+                nonlocal images_out
+
+                if isinstance(event, str) and event:
+                    delta_chunk = ChatCompletionsStreamChunk(
+                        id=chunk_id,
+                        created=created,
+                        model=model,
+                        choices=[StreamChoice(index=0, delta=Delta(content=event))],
+                    )
+                    yield f"data: {json.dumps(delta_chunk.model_dump(exclude_none=True))}\n\n".encode()
+
+                elif isinstance(event, StreamImages):
+                    images_out.extend(event.urls)
+
+                elif isinstance(event, StreamFinal):
+                    final_chunk = ChatCompletionsStreamChunk(
+                        id=chunk_id,
+                        created=created,
+                        model=model,
+                        choices=[StreamChoice(index=0, delta=Delta(), finish_reason=event.finish_reason)],
+                        conversation={"evaluationSessionId": event.evaluation_session_id},
+                        images=images_out or None,
+                        usage=_usage_to_dict(event.usage),
+                    )
+                    yield f"data: {json.dumps(final_chunk.model_dump(exclude_none=True))}\n\n".encode()
+                    # Signal caller to stop by raising StopAsyncIteration
+                    raise StopAsyncIteration
+
             try:
-                async for event in client._core.stream_message(
-                    model=req.model,
-                    prompt=prompt,
-                    evaluation_session_id=eval_id,
-                    create_new=(eval_id is None),
-                    media=images,
-                ):
-                    if isinstance(event, str) and event:
-                        delta_chunk = ChatCompletionsStreamChunk(
-                            id=chunk_id,
-                            created=created,
-                            model=model,
-                            choices=[StreamChoice(index=0, delta=Delta(content=event))],
-                        )
-                        yield f"data: {json.dumps(delta_chunk.model_dump(exclude_none=True))}\n\n".encode()
+                # Emit the prefetched first event
+                try:
+                    async for b in handle_event(first_event):
+                        yield b
+                except StopAsyncIteration:
+                    yield b"data: [DONE]\n\n"
+                    return
 
-                    elif isinstance(event, StreamImages):
-                        images_out.extend(event.urls)
-
-                    elif isinstance(event, StreamFinal):
-                        final_chunk = ChatCompletionsStreamChunk(
-                            id=chunk_id,
-                            created=created,
-                            model=model,
-                            choices=[StreamChoice(index=0, delta=Delta(), finish_reason=event.finish_reason)],
-                            conversation={"evaluationSessionId": event.evaluation_session_id},
-                            images=images_out or None,
-                            usage=_usage_to_dict(event.usage),
-                        )
-                        yield f"data: {json.dumps(final_chunk.model_dump(exclude_none=True))}\n\n".encode()
+                # Continue streaming
+                async for event in upstream:
+                    try:
+                        async for b in handle_event(event):
+                            yield b
+                    except StopAsyncIteration:
                         break
 
             except Exception as e:
@@ -251,6 +288,7 @@ def create_app(config: Optional[ClientConfig] = None) -> FastAPI:
             yield b"data: [DONE]\n\n"
 
         return StreamingResponse(sse(), media_type="text/event-stream")
+
 
     return app
 

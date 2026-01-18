@@ -53,6 +53,41 @@ class StreamSession:
         await self._session.close()
 
 
+def _extract_error_detail_from_body(body: str) -> Optional[str]:
+    b = (body or "").strip()
+    if not b:
+        return None
+
+    try:
+        data: Any = json.loads(b)
+    except Exception:
+        return None
+
+    # Common shapes:
+    # - {"error": "Message ..."}
+    # - {"error": {"message": "..."}}
+    # - {"detail": "..."}  (FastAPI)
+    if isinstance(data, dict):
+        err = data.get("error")
+        if isinstance(err, str) and err.strip():
+            return err.strip()
+        if isinstance(err, dict):
+            for k in ("message", "detail", "error"):
+                v = err.get(k)
+                if isinstance(v, str) and v.strip():
+                    return v.strip()
+
+        for k in ("detail", "message"):
+            v = data.get(k)
+            if isinstance(v, str) and v.strip():
+                return v.strip()
+
+    if isinstance(data, str) and data.strip():
+        return data.strip()
+
+    return None
+
+
 async def ensure_ok(response: ClientResponse, *, context: str = "") -> None:
     ok = getattr(response, "ok", None)
     if ok is None:
@@ -61,10 +96,11 @@ async def ensure_ok(response: ClientResponse, *, context: str = "") -> None:
         return
 
     status = int(getattr(response, "status", 0))
-    reason = getattr(response, "reason", "")
+    reason = getattr(response, "reason", "") or ""
     url = str(getattr(response, "url", ""))
 
     body = await read_response_text_safe(response)
+    detail = _extract_error_detail_from_body(body)
 
     log("[lmarena-client] HTTP ERROR")
     log("  context:", context)
@@ -73,11 +109,12 @@ async def ensure_ok(response: ClientResponse, *, context: str = "") -> None:
     log("  body:\n", body)
 
     if status in (429, 402):
-        raise RateLimitError(f"HTTP {status}: {reason}")
+        raise RateLimitError(status=status, reason=reason, detail=detail)
     if status == 401:
-        raise AuthError(f"HTTP {status}: {reason}")
+        raise AuthError(status=status, reason=reason, detail=detail)
     if status == 403 and (is_cloudflare_html(body) or looks_like_recaptcha_failure(body)):
-        raise CloudflareError("HTTP 403: blocked by anti-bot / recaptcha failure")
+        raise CloudflareError(status=403, reason=reason or "Forbidden", detail="blocked by anti-bot / recaptcha failure")
     if status == 403:
-        raise AuthError(f"HTTP {status}: Forbidden")
-    raise HTTPStatusError(f"HTTP {status}: {reason or 'HTTP error'}")
+        raise AuthError(status=403, reason=reason or "Forbidden", detail=detail)
+    raise HTTPStatusError(status=status, reason=reason or "HTTP error", detail=detail)
+

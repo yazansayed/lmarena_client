@@ -227,6 +227,8 @@ webui/dist/
 webui/lmarena_nodriver_guest/
 files.txt
 __pycache__/
+__pycache__
 *.pyc
 lmarena_client/__pycache__/
+lmarena_client/__pycache__
 webui_dist/

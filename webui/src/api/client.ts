@@ -2,6 +2,25 @@ import type { MessageContent } from "../types";
 
 const BASE_URL = window.location.origin;
 
+function extractErrorMessage(obj: any): string | null {
+  if (!obj) return null;
+
+  if (typeof obj === "string") return obj;
+
+  // FastAPI shape
+  if (typeof obj.detail === "string") return obj.detail;
+
+  // Server/SSE shape
+  if (typeof obj.error === "string") return obj.error;
+  if (obj.error && typeof obj.error.message === "string") return obj.error.message;
+
+  // Fallbacks
+  if (typeof obj.message === "string") return obj.message;
+  if (obj.error && typeof obj.error.type === "string") return obj.error.type;
+
+  return null;
+}
+
 export interface OpenAIChatMessage {
   role: "user" | "assistant";
   content: MessageContent;
@@ -65,15 +84,25 @@ export async function sendChatCompletion(
   });
 
   if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`Chat request failed: ${res.status} ${res.statusText} ${text}`);
+    const raw = await res.text().catch(() => "");
+    let parsed: any = null;
+    try {
+      parsed = raw ? JSON.parse(raw) : null;
+    } catch {
+      parsed = null;
+    }
+
+    const extracted = extractErrorMessage(parsed) || raw.trim();
+    const base = `${res.status} ${res.statusText}`.trim();
+    const msg = extracted ? `${base}: ${extracted}` : base;
+
+    throw new Error(msg);
   }
 
   const data = await res.json();
 
-  // Check for error response
-  if (data?.error) {
-    const errMsg = data.error.message || data.error.type || "Unknown error from server";
+  const errMsg = extractErrorMessage(data);
+  if (errMsg) {
     throw new Error(errMsg);
   }
 
@@ -127,8 +156,19 @@ export async function sendChatCompletionStream(
   });
 
   if (!res.ok || !res.body) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`Chat stream failed: ${res.status} ${res.statusText} ${text}`);
+    const raw = await res.text().catch(() => "");
+    let parsed: any = null;
+    try {
+      parsed = raw ? JSON.parse(raw) : null;
+    } catch {
+      parsed = null;
+    }
+
+    const extracted = extractErrorMessage(parsed) || raw.trim();
+    const base = `${res.status} ${res.statusText}`.trim();
+    const msg = extracted ? `${base}: ${extracted}` : base;
+
+    throw new Error(msg);
   }
 
   const reader = res.body.getReader();
@@ -169,9 +209,10 @@ export async function sendChatCompletionStream(
 
         // Check for error in streamed chunk
         if (parsed?.error) {
-          const errMsg = parsed.error.message || parsed.error.type || "Unknown error from server";
+          const errMsg = extractErrorMessage(parsed) || "Unknown error from server";
           throw new Error(errMsg);
         }
+
 
         const choice =
 
