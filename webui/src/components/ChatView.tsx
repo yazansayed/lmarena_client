@@ -71,11 +71,13 @@ export const ChatView: React.FC<ChatViewProps> = ({
   const formRef = useRef<HTMLFormElement | null>(null);
   const modelMenuRef = useRef<HTMLDivElement | null>(null);
   const modelFilterInputRef = useRef<HTMLInputElement | null>(null);
+  const exportMenuRef = useRef<HTMLDivElement | null>(null);
 
   const [input, setInput] = useState("");
   const [pendingImages, setPendingImages] = useState<PendingImage[]>([]);
   const [modelFilter, setModelFilter] = useState("");
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
   const [sending, setSending] = useState(false);
   const [streamingText, setStreamingText] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
@@ -90,9 +92,13 @@ export const ChatView: React.FC<ChatViewProps> = ({
 
   const messages = getMessagesForChat(activeChatId);
 
+  const canExportTxt = Boolean(activeChatId && messages.length > 0);
+  const canExportJson = Boolean(canExportTxt && activeChat?.evaluationSessionId);
+
   useEffect(() => {
     setModelMenuOpen(false);
     setModelFilter("");
+    setExportMenuOpen(false);
   }, [activeChatId]);
 
   const filteredModels = useMemo(() => {
@@ -129,6 +135,28 @@ export const ChatView: React.FC<ChatViewProps> = ({
       window.removeEventListener("mousedown", onMouseDown);
     };
   }, [modelMenuOpen]);
+
+  useEffect(() => {
+    if (!exportMenuOpen) return;
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setExportMenuOpen(false);
+    };
+
+    const onMouseDown = (e: MouseEvent) => {
+      const el = exportMenuRef.current;
+      if (!el) return;
+      if (!el.contains(e.target as Node)) setExportMenuOpen(false);
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("mousedown", onMouseDown);
+
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("mousedown", onMouseDown);
+    };
+  }, [exportMenuOpen]);
 
   async function handleSelectModel(modelId: string) {
     if (!activeChat) return;
@@ -295,7 +323,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
     }
   }
 
-  async function handleExportChat() {
+  async function handleExportChatTxt() {
     if (!activeChatId) return;
     const msgs = getMessagesForChat(activeChatId);
     if (msgs.length === 0) return;
@@ -318,6 +346,52 @@ export const ChatView: React.FC<ChatViewProps> = ({
     const a = document.createElement("a");
     a.href = url;
     a.download = `${title}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+
+    URL.revokeObjectURL(url);
+  }
+
+  async function handleExportChatJson() {
+    // Requirement: block JSON export until evaluationSessionId exists
+    if (!activeChatId) return;
+    if (!activeChat?.evaluationSessionId) return;
+
+    const msgs = getMessagesForChat(activeChatId);
+    if (msgs.length === 0) return;
+
+    const payload = {
+      version: 1 as const,
+      exportedAt: new Date().toISOString(),
+      chat: {
+        id: activeChat.id,
+        title: activeChat.title,
+        model: activeChat.model,
+        evaluationSessionId: activeChat.evaluationSessionId,
+      },
+      messages: msgs.map((m) => ({
+        id: m.id,
+        role: m.role,
+        // Text-only export: omit all images completely
+        content: extractText(m.content),
+        createdAt: m.createdAt,
+      })),
+    };
+
+    const title = sanitizeFilename(activeChat.title || "chat") || "chat";
+    const evalId =
+      sanitizeFilename(activeChat.evaluationSessionId) ||
+      activeChat.evaluationSessionId;
+
+    const blob = new Blob([JSON.stringify(payload, null, 2) + "\n"], {
+      type: "application/json;charset=utf-8",
+    });
+    const url = URL.createObjectURL(blob);
+
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${title}__${evalId}.json`;
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -404,6 +478,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
                   setModelFilter("");
                   return;
                 }
+                setExportMenuOpen(false);
                 setModelFilter("");
                 setModelMenuOpen(true);
               }}
@@ -489,21 +564,78 @@ export const ChatView: React.FC<ChatViewProps> = ({
         </div>
 
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={handleExportChat}
-            disabled={!activeChatId || messages.length === 0}
-            className={cn(
-              "inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[10px]",
-              !activeChatId || messages.length === 0
-                ? "border-slate-800 bg-slate-900 text-slate-500"
-                : "border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800"
+          <div className="relative" ref={exportMenuRef}>
+            <button
+              type="button"
+              onClick={() => {
+                if (!canExportTxt) return;
+                if (exportMenuOpen) {
+                  setExportMenuOpen(false);
+                  return;
+                }
+                setModelMenuOpen(false);
+                setExportMenuOpen(true);
+              }}
+              disabled={!canExportTxt}
+              className={cn(
+                "inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[10px]",
+                !canExportTxt
+                  ? "border-slate-800 bg-slate-900 text-slate-500"
+                  : "border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800"
+              )}
+              title="Export current chat"
+            >
+              <Download className="h-3 w-3" />
+              Export chat
+              <ChevronDown className="h-3 w-3 opacity-70" />
+            </button>
+
+            {exportMenuOpen && (
+              <div className="absolute right-0 top-full mt-1 w-44 rounded-md border border-slate-800 bg-slate-950 shadow-xl z-50">
+                <div className="py-1">
+                  <button
+                    type="button"
+                    className={cn(
+                      "w-full flex items-center justify-between gap-2 px-2 py-1.5 text-left text-xs",
+                      "text-slate-200 hover:bg-slate-900"
+                    )}
+                    onClick={async () => {
+                      setExportMenuOpen(false);
+                      await handleExportChatTxt();
+                    }}
+                  >
+                    <span className="truncate">Export TXT</span>
+                    <span className="text-[10px] text-slate-500">.txt</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={!canExportJson}
+                    title={
+                      canExportJson
+                        ? "Export JSON (text-only)"
+                        : "JSON export requires evaluationSessionId (send at least one message first)"
+                    }
+                    className={cn(
+                      "w-full flex items-center justify-between gap-2 px-2 py-1.5 text-left text-xs",
+                      canExportJson
+                        ? "text-slate-200 hover:bg-slate-900"
+                        : "text-slate-600 cursor-not-allowed"
+                    )}
+                    onClick={async () => {
+                      if (!canExportJson) return;
+                      setExportMenuOpen(false);
+                      await handleExportChatJson();
+                    }}
+                  >
+                    <span className="truncate">Export JSON</span>
+                    <span className="text-[10px] text-slate-500">.json</span>
+                  </button>
+                </div>
+              </div>
             )}
-            title="Export current chat (.txt)"
-          >
-            <Download className="h-3 w-3" />
-            Export chat
-          </button>
+          </div>
+
 
           {activeChat?.evaluationSessionId && (
             <button
